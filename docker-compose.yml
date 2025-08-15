@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  app:
+    image: yosrcharek/back
+    container_name: backend
+    build: ./backend
+    ports:
+      - "8089:8089"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysqlBD:3306/kaddem\db?&createDatabaseIfNotExist=true&useUnicode=true&useJDBCCompliantTimezoneShift=true&useLegacyDatetimeCode=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: yosr
+    depends_on:
+      - mysqlBD
+      - frontend
+    networks:
+      - spring-boot-network
+    restart: always
+
+  mysqlBD:
+    image: mysql:8.0
+    container_name: mysqlBD
+    environment:
+      MYSQL_ROOT_PASSWORD: yosr
+      MYSQL_DATABASE: kaddem_db
+    ports:
+      - "3307:3308"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - spring-boot-network
+    restart: always
+
+  nexus:
+    image: sonatype/nexus3
+    container_name: nexus
+    ports:
+      - "8083:8081"
+    environment:
+      - NEXUS_SECURITY_RANDOMPASSWORD=false
+    volumes:
+      - nexus-data:/nexus-data
+    networks:
+      - spring-boot-network
+    restart: always
+
+  frontend:
+    container_name: frontend_app
+    build: ./frontend
+    image: yosrcharek/front
+    ports:
+      - "4200:4200"
+    networks:
+      - spring-boot-network
+    restart: always
+
+  prometheusContainer:
+    image: prom/prometheus
+    container_name: prometheusContainer
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - spring-boot-network
+    restart: always
+
+networks:
+  spring-boot-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  nexus-data:

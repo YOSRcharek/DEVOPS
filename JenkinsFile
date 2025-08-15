@@ -1,0 +1,202 @@
+pipeline {
+    agent any
+    tools {
+        maven "Apache Maven 3.6.3"
+        jdk "JAVA_HOME"
+    }
+    environment {
+        DB_NAME = 'kaddem_db'
+        DB_USER = 'root'
+        DB_PASS = 'yosr'
+        DB_PORT = '3308'
+        MYSQL_CONTAINER = 'mysql-test'
+        PROMETHEUS_CONTAINER = 'prometheus'
+        GRAFANA_CONTAINER = 'grafana'
+        NEXUS_VERSION = "nexus3"
+        NEXUS_PROTOCOL = "http"
+        NEXUS_URL = '192.168.33.10:8081'
+        NEXUS_REPOSITORY = "devops"
+        NEXUS_CREDENTIAL_ID = "nexusCredential"
+        ARTIFACT_VERSION = "${BUILD_NUMBER}"
+        DOCKER_IMAGEBACK = "yosrcharek/back"
+        DOCKER_IMAGEFRONT = "yosrcharek/front"
+        CONTAINER_NAME = "kaddem_app"
+        DOCKERHUB_CREDENTIALS_ID = 'docker-hub-credentials'
+        DOCKERHUB_REPO = "yosrcharek/kaddem"
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                script {
+                    git branch: 'CharekYosr-TWIN5-G1-Kaddem', url: 'https://github.com/ahmedth20/DEVOPS.git'
+                }
+            }
+        }
+
+        stage('Start MySQL') {
+            steps {
+                script {
+                    sh '''
+                    if [ $(docker ps -q -f name=$MYSQL_CONTAINER) ]; then
+                        echo "Le conteneur MySQL est déjà en cours d'exécution."
+                    else
+                        echo "Démarrage de MySQL..."
+                        docker run --rm --name $MYSQL_CONTAINER \
+                            -e MYSQL_DATABASE=$DB_NAME \
+                            -e MYSQL_ROOT_PASSWORD=$DB_PASS \
+                            -p 3308:3306 \
+                            -d mysql:8
+                    fi
+
+                    echo "Attente de MySQL (10 sec)..."
+                    sleep 10
+
+                    docker ps | grep $MYSQL_CONTAINER || (echo "MySQL n'a pas démarré !" && exit 1)
+                    '''
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                script {
+                    sh 'mvn -f ./backend/pom.xml clean install'
+                }
+            }
+        }
+
+     
+        stage('Test') {
+            steps {
+                script {
+                    sh 'mvn -f ./backend/pom.xml test'
+                }
+            }
+        }
+     
+       stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn  -f ./backend sonar:sonar -X'
+                }
+            }
+        }
+
+      stage("Deploy to Nexus") {
+            steps {
+                script {
+                    def pom = readMavenPom file: "./backend/pom.xml"
+                    def files = findFiles(glob: "backend/target/*.${pom.packaging}")
+
+                    if (files.length == 0) {
+                        error "*** Aucun fichier trouvé pour l’upload Nexus dans backend/target/*.${pom.packaging}"
+                    }
+
+                    def artifactPath = files[0].path
+                    def artifactExists = fileExists artifactPath
+
+                    if (artifactExists) {
+                        echo "*** Fichier trouvé : ${files[0].name}, chemin : ${files[0].path}"
+                        echo "*** Infos : groupId=${pom.groupId}, artifactId=${pom.artifactId}, packaging=${pom.packaging}, version=${pom.version}"
+
+                        nexusArtifactUploader(
+                            nexusVersion: NEXUS_VERSION,
+                            protocol: NEXUS_PROTOCOL,
+                            nexusUrl: NEXUS_URL,
+                            groupId: pom.groupId,
+                            artifactId: pom.artifactId,
+                            version: ARTIFACT_VERSION,
+                            repository: NEXUS_REPOSITORY,
+                            credentialsId: NEXUS_CREDENTIAL_ID,
+                            artifacts: [[
+                                artifactId: pom.artifactId,
+                                classifier: '',
+                                file: artifactPath,
+                                type: pom.packaging
+                            ]]
+                        )
+                    } else {
+                        error "*** Le fichier ${artifactPath} n'existe pas"
+                    }
+                }
+            }
+        }
+
+               stage('Push New Docker Image') {
+                    steps {
+                        script {
+                            echo 'Pushing Docker Image (New Method)'
+                            withCredentials([usernamePassword(credentialsId: DOCKERHUB_CREDENTIALS_ID, usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                                sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                                sh "docker push $DOCKER_IMAGEBACK"
+                                sh "docker push $DOCKER_IMAGEFRONT"
+                            }
+                        }
+                    }
+                }
+       
+
+       
+          stage('Build app') {
+             steps {
+                   sh 'docker-compose build'
+            }
+         
+          }
+          stage('Run app') {
+            steps {
+                  sh 'docker-compose down -v --remove-orphans || true'
+                   sh 'export COMPOSE_HTTP_TIMEOUT=120'
+                   sh 'docker-compose up -d'
+                 }
+         }
+    
+
+        stage('Cleanup') {
+            steps {
+                script {
+                    sh '''
+                    echo "Arrêt des conteneurs..."
+                    docker stop $MYSQL_CONTAINER || true
+                    
+                    '''
+                }
+            }
+        }
+
+       
+    }
+    post {
+        always {
+            script {
+                def jobName = env.JOB_NAME
+                def buildNumber = env.BUILD_NUMBER
+                def pipelineStatus = currentBuild.result ?: 'SUCCESS'  // Valeur par défaut pour éviter NULL
+                def bannerColor = pipelineStatus.toUpperCase() == 'SUCCESS' ? 'green' : 'red'
+                def body = """<html>
+                <body>
+                    <div style="border: 4px solid ${bannerColor}; padding: 10px;">
+                        <h2>${jobName} - Build ${buildNumber}</h2>
+                        <div style="background-color: ${bannerColor}; padding: 10px;">
+                            <h3 style="color: white;">Pipeline Status: ${pipelineStatus.toUpperCase()}</h3>
+                        </div>
+                        <p>Check the <a href="${env.BUILD_URL}">console output</a>.</p>
+                    </div>
+                </body>
+                </html>"""
+
+                emailext (
+                    subject: "${jobName} - Build ${buildNumber} - ${pipelineStatus.toUpperCase()}",
+                    body: body,
+                    to: 'yosryassoura31@gmail.com',
+                    from: 'jenkins@example.com',
+                    replyTo: 'jenkins@example.com',
+                    mimeType: 'text/html'
+                )
+            }
+        }
+    }
+
+    
+}
