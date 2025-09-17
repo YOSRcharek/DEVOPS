@@ -77,15 +77,15 @@ Before running this project, make sure the following tools are installed and con
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/your-username/DEVOPS.git
+git clone https://github.com/YOSRcharek/DEVOPS.git
 cd DEVOPS
-
-2️⃣ Start the Virtual Environment
+```
+### 2️⃣ Start the Virtual Environment
 
 Provision a VM with all required tools:
-
+```bash
 vagrant up
-
+```
 
 This will:
 
@@ -93,7 +93,7 @@ Install Jenkins, SonarQube, Nexus, Prometheus, and Grafana.
 
 Configure Docker & Maven.
 
-3️⃣ Access Services
+### 3️⃣ Access Services
 Service	URL	Default Credentials
 Jenkins	http://localhost:8080
 	admin / (initial password in /var/lib/jenkins/secrets/initialAdminPassword)
@@ -105,7 +105,7 @@ Prometheus	http://localhost:9090
 	N/A
 Grafana	http://localhost:3000
 	admin / admin
-4️⃣ Run the Pipeline
+### 4️⃣ Run the Pipeline
 
 Open Jenkins → Create a new Pipeline job → Point to the Jenkinsfile in the repository.
 
@@ -129,12 +129,12 @@ Grafana provides interactive dashboards to visualize CPU usage, memory, build hi
 
 🚦 Automated rollback on failed builds.
 
-📜 License
+### 📜 License
 
 This project is released under the MIT License
 .
 
-💡 GitHub Repository
+### 💡 GitHub Repository
 
 🔗 DEVOPS
 
@@ -144,5 +144,3 @@ This project is released under the MIT License
 - Clearly lists **prerequisites** (Vagrant + all services).
 - Shows **service URLs & default credentials** for quick access.
 - Includes **pipeline workflow** for easy understanding.
-
-## 📂 Project Structure
